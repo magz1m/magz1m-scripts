@@ -1,0 +1,1508 @@
+--[[
+    magz1mESP v2.1 "Nebula" (Fixed Icons)
+    Creators: magz1m • DeepSeek • DeepSeek Harness
+]]
+
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService     = game:GetService("TweenService")
+local LocalPlayer      = Players.LocalPlayer
+local Camera           = workspace.CurrentCamera
+
+-- ============================================================
+-- EXECUTOR DETECTION
+-- ============================================================
+local EXECUTOR = "Unknown"
+pcall(function()
+    if identifyexecutor then EXECUTOR = identifyexecutor() or "Unknown" end
+    if EXECUTOR == "Unknown" or EXECUTOR == "" then
+        if syn and syn.request then EXECUTOR = "Synapse X"
+        elseif fluxus then EXECUTOR = "Fluxus"
+        elseif is_sirhurt_closure then EXECUTOR = "SirHurt"
+        elseif KRNL_LOADED then EXECUTOR = "KRNL"
+        else EXECUTOR = "Standard" end
+    end
+end)
+
+-- ============================================================
+-- CONFIG — ВСЕ ФУНКЦИИ ВЫКЛЮЧЕНЫ ПРИ ЗАПУСКЕ
+-- ============================================================
+local Defaults = {
+    ESPEnabled=false, ShowBox=false, ShowCornerBox=false, ShowFilledBox=false,
+    Show3DBox=false, ShowChams=false, ShowChamsGradient=false,
+    ShowSkeleton=false, ShowJoints=false, ShowTracer=false, ShowWeaponTracer=false,
+    ShowGlow=false, ShowOffscreenArrow=false, ShowFeetCircle=false,
+    ShowHalo=false, ShowTrail=false, ShowStatusIcon=false,
+    ShowName=false, ShowDisplayName=false, ShowDistance=false,
+    ShowItem=false, ShowHealthBar=false, ShowMinimap=false, ShowRadar=false,
+    TeamCheck=false, WhitelistFriends=false,
+    Pulsation=false, FadeAnimations=false,
+    MaxDistance=1000, RainbowSpeed=0.6, LineThickness=1.5,
+    TextSize=14, ESPTransparency=1.0, SkeletonDistance=500,
+    ColorMode="Static", StaticColor=Color3.fromRGB(0,255,255),
+    Theme="Cosmos", DarkMode=true,
+    FrameSkip=2, Debug=false,
+}
+
+local Config = {}
+for k,v in pairs(Defaults) do Config[k]=v end
+
+local Blacklist = {}
+local Whitelist = {}
+
+-- ============================================================
+-- UTILITIES
+-- ============================================================
+local function safe(fn, ...)
+    local ok, err = pcall(fn, ...)
+    if not ok and Config.Debug then warn("[magz1mESP] " .. tostring(err)) end
+    return ok
+end
+
+local function clamp(x,a,b) return math.max(a, math.min(b, x)) end
+
+local function colorToHex(c)
+    return string.format("#%02X%02X%02X",
+        math.floor(c.R*255), math.floor(c.G*255), math.floor(c.B*255))
+end
+
+local function hexToColor(hex)
+    hex = (hex or ""):gsub("#","")
+    if #hex ~= 6 then return nil end
+    local r = tonumber(hex:sub(1,2),16)
+    local g = tonumber(hex:sub(3,4),16)
+    local b = tonumber(hex:sub(5,6),16)
+    if not (r and g and b) then return nil end
+    return Color3.fromRGB(r,g,b)
+end
+
+local function getColorAt(t)
+    if Config.ColorMode == "Rainbow" then
+        return Color3.new(
+            math.sin(t) * 0.5 + 0.5,
+            math.sin(t + 2.094) * 0.5 + 0.5,
+            math.sin(t + 4.188) * 0.5 + 0.5)
+    elseif Config.ColorMode == "Pastel" then
+        return Color3.new(
+            math.sin(t) * 0.2 + 0.8,
+            math.sin(t + 2.094) * 0.2 + 0.8,
+            math.sin(t + 4.188) * 0.2 + 0.8)
+    end
+    return Config.StaticColor
+end
+
+local function getCurrentColor()
+    if Config.ColorMode ~= "Static" then
+        return getColorAt(tick() * Config.RainbowSpeed)
+    end
+    return Config.StaticColor
+end
+
+-- ============================================================
+-- ICONS (Roblox Image Assets)
+-- ============================================================
+local Icons = {
+    Logo = "rbxassetid://7734053426",
+    Close = "rbxassetid://7072725342",
+    Minimize = "rbxassetid://7072719338",
+    Expand = "rbxassetid://7072720360",
+    Star = "rbxassetid://7734080780",
+    Diamond = "rbxassetid://7734050498",
+    Dot = "rbxassetid://7072721405",
+    Circle = "rbxassetid://7734065438",
+    Triangle = "rbxassetid://7734091199",
+    Square = "rbxassetid://7072720360",
+    Hex = "rbxassetid://7734049307",
+    HexFilled = "rbxassetid://7734049307",
+    Reset = "rbxassetid://7072719338",
+    Save = "rbxassetid://7072720360",
+    Load = "rbxassetid://7072720360",
+    Palette = "rbxassetid://7734073781",
+    Sun = "rbxassetid://7734085291",
+    Moon = "rbxassetid://7734065438",
+    Eye = "rbxassetid://7734065438",
+    Sparkle = "rbxassetid://7734053426",
+    Up = "rbxassetid://7072720360",
+    Down = "rbxassetid://7072720360",
+    Left = "rbxassetid://7072720360",
+    Right = "rbxassetid://7734091199",
+    Check = "rbxassetid://7072719338",
+    Cross = "rbxassetid://7072725342",
+    Wave = "rbxassetid://7734091199",
+    Box = "rbxassetid://7734049307",
+    Target = "rbxassetid://7734091199",
+    Skull = "rbxassetid://7734101999",
+    Bolt = "rbxassetid://7734053697",
+    Shield = "rbxassetid://7072720360",
+    User = "rbxassetid://7734101999",
+}
+
+-- ============================================================
+-- THEMES
+-- ============================================================
+local Themes = {
+    Cosmos = {
+        bg1=Color3.fromRGB(22,13,42), bg2=Color3.fromRGB(12,7,26),
+        accent=Color3.fromRGB(150,100,255), accent2=Color3.fromRGB(0,210,255),
+        text=Color3.fromRGB(235,225,255), subtext=Color3.fromRGB(160,140,200),
+        stroke=Color3.fromRGB(130,90,255), stars=true,
+    },
+    Minimal = {
+        bg1=Color3.fromRGB(32,32,38), bg2=Color3.fromRGB(22,22,28),
+        accent=Color3.fromRGB(210,210,220), accent2=Color3.fromRGB(160,160,170),
+        text=Color3.fromRGB(245,245,245), subtext=Color3.fromRGB(150,150,155),
+        stroke=Color3.fromRGB(90,90,100), stars=false,
+    },
+    Neon = {
+        bg1=Color3.fromRGB(12,20,36), bg2=Color3.fromRGB(5,10,22),
+        accent=Color3.fromRGB(0,255,190), accent2=Color3.fromRGB(255,60,200),
+        text=Color3.fromRGB(200,255,240), subtext=Color3.fromRGB(110,190,170),
+        stroke=Color3.fromRGB(0,255,190), stars=true,
+    },
+    Cyberpunk = {
+        bg1=Color3.fromRGB(42,10,32), bg2=Color3.fromRGB(20,5,20),
+        accent=Color3.fromRGB(255,50,130), accent2=Color3.fromRGB(255,220,50),
+        text=Color3.fromRGB(255,235,245), subtext=Color3.fromRGB(210,130,160),
+        stroke=Color3.fromRGB(255,50,130), stars=true,
+    },
+}
+
+local function getT()
+    local base = Themes[Config.Theme] or Themes.Cosmos
+    if not Config.DarkMode then
+        return {
+            bg1=Color3.fromRGB(245,245,250), bg2=Color3.fromRGB(225,225,238),
+            accent=base.accent, accent2=base.accent2,
+            text=Color3.fromRGB(30,25,55), subtext=Color3.fromRGB(105,100,130),
+            stroke=base.stroke, stars=false,
+        }
+    end
+    return base
+end
+
+-- ============================================================
+-- GUI HELPERS
+-- ============================================================
+local GUI, MainFrame, TabContent, TabButtons = nil, nil, nil, {}
+local CurrentTab = "ESP"
+local ESPObjects = {}
+local Dragging = false
+local DragStart, DragFrom
+local ToggleBtn
+local FrameCounter = 0
+local MinimapData = {}
+
+local function corner(parent, radius)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, radius or 8)
+    c.Parent = parent
+    return c
+end
+
+local function stroke(parent, color, thick, trans)
+    local s = Instance.new("UIStroke")
+    s.Color = color or Color3.new(1,1,1)
+    s.Thickness = thick or 1
+    s.Transparency = trans or 0.5
+    s.Parent = parent
+    return s
+end
+
+local function textLabel(parent, text, size, color, bold)
+    local l = Instance.new("TextLabel")
+    l.BackgroundTransparency = 1
+    l.Text = text
+    l.TextSize = size or 13
+    l.TextColor3 = color or Color3.new(1,1,1)
+    l.Font = bold and Enum.Font.GothamBold or Enum.Font.Gotham
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.Parent = parent
+    return l
+end
+
+-- Обновленная функция для картинок-иконок
+local function iconLabel(parent, imageId, size, color)
+    local l = Instance.new("ImageLabel")
+    l.BackgroundTransparency = 1
+    l.Image = imageId
+    l.ImageColor3 = color or Color3.new(1,1,1)
+    l.ScaleType = Enum.ScaleType.Fit
+    l.Parent = parent
+    return l
+end
+
+-- ============================================================
+-- COMPONENTS
+-- ============================================================
+local function createToggle(parent, labelTxt, key, iconGlyph)
+    local T = getT()
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 34)
+    btn.BackgroundColor3 = T.bg2
+    btn.BackgroundTransparency = 0.35
+    btn.Text = ""
+    btn.AutoButtonColor = false
+    btn.Parent = parent
+    corner(btn, 8)
+    local st = stroke(btn, T.stroke, 1, 0.75)
+
+    local ic = iconLabel(btn, iconGlyph or Icons.Diamond, 14, T.subtext)
+    ic.Size = UDim2.new(0, 14, 0, 14)
+    ic.Position = UDim2.new(0, 10, 0.5, -7)
+
+    local lb = textLabel(btn, labelTxt, 13, T.text)
+    lb.Size = UDim2.new(1, -80, 1, 0)
+    lb.Position = UDim2.new(0, 32, 0, 0)
+
+    local track = Instance.new("Frame")
+    track.Size = UDim2.new(0, 36, 0, 20)
+    track.Position = UDim2.new(1, -46, 0.5, -10)
+    track.BackgroundColor3 = Color3.fromRGB(50,40,70)
+    track.BorderSizePixel = 0
+    track.Parent = btn
+    corner(track, 20)
+
+    local thumb = Instance.new("Frame")
+    thumb.Size = UDim2.new(0, 16, 0, 16)
+    thumb.Position = UDim2.new(0, 2, 0.5, -8)
+    thumb.BackgroundColor3 = Color3.fromRGB(120,120,140)
+    thumb.BorderSizePixel = 0
+    thumb.Parent = track
+    corner(thumb, 16)
+
+    local state = Config[key]
+
+    local function update(anim)
+        local targetColor = state and T.accent or Color3.fromRGB(50,40,70)
+        local targetThumb = state and Color3.fromRGB(255,255,255) or Color3.fromRGB(120,120,140)
+        local targetPos = state and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,2,0.5,-8)
+        if anim then
+            TweenService:Create(track, TweenInfo.new(0.2, Enum.EasingStyle.Quart), {BackgroundColor3=targetColor}):Play()
+            TweenService:Create(thumb, TweenInfo.new(0.2, Enum.EasingStyle.Quart), {Position=targetPos, BackgroundColor3=targetThumb}):Play()
+            TweenService:Create(ic, TweenInfo.new(0.2), {ImageColor3 = state and T.accent or T.subtext}):Play()
+        else
+            track.BackgroundColor3 = targetColor
+            thumb.Position = targetPos
+            thumb.BackgroundColor3 = targetThumb
+            ic.ImageColor3 = state and T.accent or T.subtext
+        end
+    end
+
+    btn.MouseButton1Click:Connect(function()
+        state = not state
+        Config[key] = state
+        update(true)
+    end)
+
+    update(false)
+    return btn
+end
+
+local function createSlider(parent, labelTxt, key, minV, maxV, isFloat)
+    local T = getT()
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 0, 44)
+    frame.BackgroundColor3 = T.bg2
+    frame.BackgroundTransparency = 0.35
+    frame.BorderSizePixel = 0
+    frame.Parent = parent
+    corner(frame, 8)
+    stroke(frame, T.stroke, 1, 0.75)
+
+    local lb = textLabel(frame, labelTxt, 12, T.text)
+    lb.Size = UDim2.new(1, -70, 0, 16)
+    lb.Position = UDim2.new(0, 10, 0, 4)
+
+    local val = textLabel(frame, "", 12, T.accent, true)
+    val.Size = UDim2.new(0, 60, 0, 16)
+    val.Position = UDim2.new(1, -66, 0, 4)
+    val.TextXAlignment = Enum.TextXAlignment.Right
+
+    local track = Instance.new("Frame")
+    track.Size = UDim2.new(1, -20, 0, 4)
+    track.Position = UDim2.new(0, 10, 1, -14)
+    track.BackgroundColor3 = Color3.fromRGB(40,30,60)
+    track.BorderSizePixel = 0
+    track.Parent = frame
+    corner(track, 4)
+
+    local fill = Instance.new("Frame")
+    fill.Size = UDim2.new(0, 0, 1, 0)
+    fill.BackgroundColor3 = T.accent
+    fill.BorderSizePixel = 0
+    fill.Parent = track
+    corner(fill, 4)
+
+    local dragging = false
+
+    local function refresh()
+        local pct = clamp((Config[key] - minV) / (maxV - minV), 0, 1)
+        fill.Size = UDim2.new(pct, 0, 1, 0)
+        val.Text = isFloat and string.format("%.2f", Config[key]) or tostring(math.floor(Config[key]))
+    end
+
+    local function setFromX(mx)
+        local ap = track.AbsolutePosition.X
+        local asz = track.AbsoluteSize.X
+        local pct = clamp((mx - ap) / asz, 0, 1)
+        local v = minV + (maxV - minV) * pct
+        Config[key] = isFloat and math.floor(v*100)/100 or math.floor(v + 0.5)
+        refresh()
+    end
+
+    track.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            setFromX(input.Position.X)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch) then
+            setFromX(input.Position.X)
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+
+    refresh()
+    return frame
+end
+
+local function createButton(parent, labelTxt, iconGlyph, callback, color)
+    local T = getT()
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 32)
+    btn.BackgroundColor3 = color or T.accent
+    btn.BackgroundTransparency = 0.2
+    btn.Text = ""
+    btn.AutoButtonColor = false
+    btn.Parent = parent
+    corner(btn, 8)
+    stroke(btn, T.stroke, 1, 0.5)
+
+    local ic = iconLabel(btn, iconGlyph or Icons.Dot, 14, Color3.new(1,1,1))
+    ic.Size = UDim2.new(0, 14, 0, 14)
+    ic.Position = UDim2.new(0, 10, 0.5, -7)
+
+    local lb = textLabel(btn, labelTxt, 13, Color3.new(1,1,1), true)
+    lb.Size = UDim2.new(1, -34, 1, 0)
+    lb.Position = UDim2.new(0, 32, 0, 0)
+
+    btn.MouseButton1Click:Connect(function()
+        if callback then safe(callback) end
+    end)
+    return btn
+end
+
+local function createSection(parent, titleTxt, glyph)
+    local T = getT()
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 0, 24)
+    frame.BackgroundTransparency = 1
+    frame.Parent = parent
+
+    local ic = iconLabel(frame, glyph or Icons.Star, 14, T.accent)
+    ic.Size = UDim2.new(0, 14, 0, 14)
+    ic.Position = UDim2.new(0, 4, 0.5, -7)
+
+    local lb = textLabel(frame, titleTxt, 13, T.accent, true)
+    lb.Size = UDim2.new(1, -26, 1, 0)
+    lb.Position = UDim2.new(0, 24, 0, 0)
+    return frame
+end
+
+-- ============================================================
+-- GUI BUILDER
+-- ============================================================
+local function buildGUI()
+    local T = getT()
+
+    GUI = Instance.new("ScreenGui")
+    GUI.Name = "magz1mESP"
+    GUI.ResetOnSpawn = false
+    GUI.IgnoreGuiInset = true
+    GUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    GUI.Parent = game:GetService("CoreGui")
+
+    MainFrame = Instance.new("Frame")
+    MainFrame.Name = "Main"
+    MainFrame.Size = UDim2.new(0, 460, 0, 560)
+    MainFrame.Position = UDim2.new(0.5, -230, 0.5, -280)
+    MainFrame.BackgroundColor3 = T.bg1
+    MainFrame.BackgroundTransparency = 0.15
+    MainFrame.BorderSizePixel = 0
+    MainFrame.ClipsDescendants = true
+    MainFrame.Parent = GUI
+    corner(MainFrame, 18)
+    stroke(MainFrame, T.stroke, 1.5, 0.35)
+
+    local grad = Instance.new("UIGradient")
+    grad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, T.bg1),
+        ColorSequenceKeypoint.new(1, T.bg2),
+    })
+    grad.Rotation = 135
+    grad.Parent = MainFrame
+
+    if T.stars then
+        for _=1,45 do
+            local star = Instance.new("Frame")
+            star.Size = UDim2.new(0, math.random(1,3), 0, math.random(1,3))
+            star.Position = UDim2.new(math.random(), 0, math.random(), 0)
+            star.BackgroundColor3 = Color3.new(1,1,1)
+            star.BackgroundTransparency = math.random(35,85)/100
+            star.BorderSizePixel = 0
+            star.Parent = MainFrame
+            corner(star, 4)
+        end
+    end
+
+    local header = Instance.new("Frame")
+    header.Size = UDim2.new(1, 0, 0, 62)
+    header.BackgroundTransparency = 1
+    header.Parent = MainFrame
+
+    local logo = iconLabel(header, Icons.Logo, 24, T.accent)
+    logo.Size = UDim2.new(0, 24, 0, 24)
+    logo.Position = UDim2.new(0, 16, 0.5, -12)
+
+    local title = textLabel(header, "magz1mESP", 20, T.text, true)
+    title.Size = UDim2.new(0, 240, 0, 22)
+    title.Position = UDim2.new(0, 50, 0, 10)
+    title.Font = Enum.Font.GothamBold
+
+    local subtitle = textLabel(header, "Nebula v2.1  •  " .. EXECUTOR, 11, T.subtext)
+    subtitle.Size = UDim2.new(0, 240, 0, 14)
+    subtitle.Position = UDim2.new(0, 50, 0, 34)
+
+    -- Minimize
+    local minBtn = Instance.new("TextButton")
+    minBtn.Size = UDim2.new(0, 28, 0, 28)
+    minBtn.Position = UDim2.new(1, -74, 0, 16)
+    minBtn.BackgroundColor3 = T.bg2
+    minBtn.BackgroundTransparency = 0.4
+    minBtn.Text = ""
+    minBtn.BorderSizePixel = 0
+    minBtn.AutoButtonColor = false
+    minBtn.Parent = header
+    corner(minBtn, 8)
+    local minIcon = iconLabel(minBtn, Icons.Minimize, 12, T.text)
+    minIcon.Size = UDim2.new(0, 12, 0, 12)
+    minIcon.Position = UDim2.new(0.5, -6, 0.5, -6)
+
+    -- Close
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 28, 0, 28)
+    closeBtn.Position = UDim2.new(1, -40, 0, 16)
+    closeBtn.BackgroundColor3 = T.bg2
+    closeBtn.BackgroundTransparency = 0.4
+    closeBtn.Text = ""
+    closeBtn.BorderSizePixel = 0
+    closeBtn.AutoButtonColor = false
+    closeBtn.Parent = header
+    corner(closeBtn, 8)
+    local closeIcon = iconLabel(closeBtn, Icons.Close, 12, T.text)
+    closeIcon.Size = UDim2.new(0, 12, 0, 12)
+    closeIcon.Position = UDim2.new(0.5, -6, 0.5, -6)
+
+    local divider = Instance.new("Frame")
+    divider.Size = UDim2.new(0.94, 0, 0, 1)
+    divider.Position = UDim2.new(0.03, 0, 0, 62)
+    divider.BackgroundColor3 = T.stroke
+    divider.BackgroundTransparency = 0.6
+    divider.BorderSizePixel = 0
+    divider.Parent = MainFrame
+
+    local tabBar = Instance.new("Frame")
+    tabBar.Size = UDim2.new(1, -20, 0, 40)
+    tabBar.Position = UDim2.new(0, 10, 0, 68)
+    tabBar.BackgroundColor3 = T.bg2
+    tabBar.BackgroundTransparency = 0.5
+    tabBar.BorderSizePixel = 0
+    tabBar.Parent = MainFrame
+    corner(tabBar, 10)
+    stroke(tabBar, T.stroke, 1, 0.75)
+
+    local tabLayout = Instance.new("UIListLayout")
+    tabLayout.FillDirection = Enum.FillDirection.Horizontal
+    tabLayout.Padding = UDim.new(0, 2)
+    tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    tabLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+    tabLayout.Parent = tabBar
+
+    local tabs = {
+        {key="ESP",    label="ESP",     icon=Icons.Eye},
+        {key="FX",     label="FX",      icon=Icons.Sparkle},
+        {key="Filter", label="Filter",  icon=Icons.Target},
+        {key="Style",  label="Style",   icon=Icons.Palette},
+        {key="Theme",  label="Theme",   icon=Icons.Sun},
+        {key="About",  label="About",   icon=Icons.Star},
+    }
+
+    for _, tab in ipairs(tabs) do
+        local tabBtn = Instance.new("TextButton")
+        tabBtn.Size = UDim2.new(0, 68, 0, 30)
+        tabBtn.BackgroundColor3 = Color3.new(1,1,1)
+        tabBtn.BackgroundTransparency = 1
+        tabBtn.Text = "     " .. tab.label
+        tabBtn.TextColor3 = T.subtext
+        tabBtn.TextSize = 11
+        tabBtn.Font = Enum.Font.GothamBold
+        tabBtn.TextXAlignment = Enum.TextXAlignment.Left
+        tabBtn.BorderSizePixel = 0
+        tabBtn.AutoButtonColor = false
+        tabBtn.Parent = tabBar
+        corner(tabBtn, 8)
+        
+        local tabIcon = iconLabel(tabBtn, tab.icon, 12, T.subtext)
+        tabIcon.Size = UDim2.new(0, 12, 0, 12)
+        tabIcon.Position = UDim2.new(0, 8, 0.5, -6)
+        
+        TabButtons[tab.key] = tabBtn
+        tabBtn.MouseButton1Click:Connect(function()
+            safe(function() switchTab(tab.key) end)
+        end)
+    end
+
+    TabContent = Instance.new("ScrollingFrame")
+    TabContent.Size = UDim2.new(1, -20, 1, -128)
+    TabContent.Position = UDim2.new(0, 10, 0, 116)
+    TabContent.BackgroundTransparency = 1
+    TabContent.BorderSizePixel = 0
+    TabContent.ScrollBarThickness = 3
+    TabContent.ScrollBarImageColor3 = T.accent
+    TabContent.CanvasSize = UDim2.new(0, 0, 0, 0)
+    TabContent.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    TabContent.Parent = MainFrame
+
+    local contentLayout = Instance.new("UIListLayout")
+    contentLayout.Padding = UDim.new(0, 6)
+    contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    contentLayout.Parent = TabContent
+
+    ToggleBtn = Instance.new("TextButton")
+    ToggleBtn.Size = UDim2.new(0, 52, 0, 52)
+    ToggleBtn.Position = UDim2.new(0, 20, 0.5, -26)
+    ToggleBtn.BackgroundColor3 = T.bg1
+    ToggleBtn.BackgroundTransparency = 0.15
+    ToggleBtn.Text = ""
+    ToggleBtn.BorderSizePixel = 0
+    ToggleBtn.AutoButtonColor = false
+    ToggleBtn.Visible = false
+    ToggleBtn.Parent = GUI
+    corner(ToggleBtn, 26)
+    stroke(ToggleBtn, T.stroke, 1.5, 0.35)
+    
+    local toggleIcon = iconLabel(ToggleBtn, Icons.Logo, 24, T.accent)
+    toggleIcon.Size = UDim2.new(0, 24, 0, 24)
+    toggleIcon.Position = UDim2.new(0.5, -12, 0.5, -12)
+
+    ToggleBtn.MouseButton1Click:Connect(function()
+        MainFrame.Visible = true
+        ToggleBtn.Visible = false
+    end)
+
+    minBtn.MouseButton1Click:Connect(function()
+        MainFrame.Visible = false
+        ToggleBtn.Visible = true
+    end)
+
+    closeBtn.MouseButton1Click:Connect(function()
+        safe(destroyAll)
+    end)
+
+    header.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+            Dragging = true
+            DragStart = input.Position
+            DragFrom = MainFrame.Position
+        end
+    end)
+    header.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+            Dragging = false
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if Dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch) then
+            local d = input.Position - DragStart
+            MainFrame.Position = UDim2.new(DragFrom.X.Scale, DragFrom.X.Offset + d.X,
+                DragFrom.Y.Scale, DragFrom.Y.Offset + d.Y)
+        end
+    end)
+
+    MainFrame.Size = UDim2.new(0, 0, 0, 0)
+    TweenService:Create(MainFrame, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        {Size = UDim2.new(0, 460, 0, 560)}):Play()
+
+    switchTab("ESP")
+end
+
+-- ============================================================
+-- TAB SWITCHER
+-- ============================================================
+function switchTab(key)
+    if CurrentTab == key then return end
+    CurrentTab = key
+    local T = getT()
+
+    for k, btn in pairs(TabButtons) do
+        local active = (k == key)
+        TweenService:Create(btn, TweenInfo.new(0.2), {
+            TextColor3 = active and T.accent or T.subtext,
+            BackgroundTransparency = active and 0.7 or 1,
+        }):Play()
+        btn.BackgroundColor3 = T.bg1
+        
+        -- Плавная перекраска иконки вкладки
+        local ic = btn:FindFirstChildOfClass("ImageLabel")
+        if ic then
+            TweenService:Create(ic, TweenInfo.new(0.2), {
+                ImageColor3 = active and T.accent or T.subtext
+            }):Play()
+        end
+    end
+
+    for _, child in ipairs(TabContent:GetChildren()) do
+        if child:IsA("Frame") or child:IsA("TextButton") then
+            child:Destroy()
+        end
+    end
+
+    local function newList()
+        local holder = Instance.new("Frame")
+        holder.Size = UDim2.new(1, 0, 0, 0)
+        holder.BackgroundTransparency = 1
+        holder.AutomaticSize = Enum.AutomaticSize.Y
+        holder.Parent = TabContent
+        local l = Instance.new("UIListLayout")
+        l.Padding = UDim.new(0, 6)
+        l.SortOrder = Enum.SortOrder.LayoutOrder
+        l.Parent = holder
+        return holder
+    end
+
+    if key == "ESP" then
+        local h = newList()
+        createSection(h, "Основное", Icons.Sparkle)
+        createToggle(h, "Включить ESP", "ESPEnabled", Icons.Bolt)
+
+        createSection(h, "Боксы", Icons.Box)
+        createToggle(h, "Box ESP", "ShowBox", Icons.Square)
+        createToggle(h, "Corner Box", "ShowCornerBox", Icons.Triangle)
+        createToggle(h, "Filled Box", "ShowFilledBox", Icons.Square)
+        createToggle(h, "3D Box", "Show3DBox", Icons.Hex)
+        createToggle(h, "Chams", "ShowChams", Icons.Diamond)
+        createToggle(h, "Chams Gradient", "ShowChamsGradient", Icons.HexFilled)
+
+        createSection(h, "Скелет и линии", Icons.Diamond)
+        createToggle(h, "Skeleton", "ShowSkeleton", Icons.Diamond)
+        createToggle(h, "Суставы", "ShowJoints", Icons.Dot)
+        createToggle(h, "Glow", "ShowGlow", Icons.Star)
+        createToggle(h, "Tracer", "ShowTracer", Icons.Wave)
+        createToggle(h, "Weapon Tracer", "ShowWeaponTracer", Icons.Right)
+
+        createSection(h, "Надписи", Icons.Eye)
+        createToggle(h, "Имя", "ShowName", Icons.User)
+        createToggle(h, "DisplayName", "ShowDisplayName", Icons.Star)
+        createToggle(h, "Дистанция", "ShowDistance", Icons.Right)
+        createToggle(h, "Предмет в руке", "ShowItem", Icons.Target)
+        createToggle(h, "Полоска HP", "ShowHealthBar", Icons.Shield)
+        createToggle(h, "Статус-иконка", "ShowStatusIcon", Icons.Skull)
+
+    elseif key == "FX" then
+        local h = newList()
+        createSection(h, "Эффекты", Icons.Sparkle)
+        createToggle(h, "Пульсация цвета", "Pulsation", Icons.Wave)
+        createToggle(h, "Fade in/out", "FadeAnimations", Icons.Circle)
+        createToggle(h, "Стрелка вне экрана", "ShowOffscreenArrow", Icons.Up)
+        createToggle(h, "Круг у ног", "ShowFeetCircle", Icons.Circle)
+        createToggle(h, "Halo над головой", "ShowHalo", Icons.Star)
+        createToggle(h, "Trail (шлейф)", "ShowTrail", Icons.Wave)
+
+        createSection(h, "Мини-карта и радар", Icons.Hex)
+        createToggle(h, "Мини-карта", "ShowMinimap", Icons.Box)
+        createToggle(h, "Радар", "ShowRadar", Icons.Target)
+
+    elseif key == "Filter" then
+        local h = newList()
+        createSection(h, "Фильтры", Icons.Target)
+        createToggle(h, "Team Check", "TeamCheck", Icons.Shield)
+        createToggle(h, "Whitelist друзей", "WhitelistFriends", Icons.Star)
+
+        createButton(h, "Добавить в Whitelist", Icons.Check, function()
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer then
+                    Whitelist[p.UserId] = true
+                end
+            end
+        end)
+
+        createButton(h, "Очистить Whitelist", Icons.Reset, function()
+            Whitelist = {}
+        end, Color3.fromRGB(200,80,80))
+
+        createButton(h, "Очистить Blacklist", Icons.Reset, function()
+            Blacklist = {}
+        end, Color3.fromRGB(200,80,80))
+
+    elseif key == "Style" then
+        local h = newList()
+        createSection(h, "Слайдеры", Icons.Hex)
+        createSlider(h, "Макс. дистанция", "MaxDistance", 50, 5000, false)
+        createSlider(h, "Скорость радуги", "RainbowSpeed", 0.1, 3, true)
+        createSlider(h, "Толщина линий", "LineThickness", 0.5, 5, true)
+        createSlider(h, "Размер текста", "TextSize", 8, 24, false)
+        createSlider(h, "Прозрачность ESP", "ESPTransparency", 0, 1, true)
+        createSlider(h, "Дистанция скелета", "SkeletonDistance", 50, 2000, false)
+        createSlider(h, "Frame Skip", "FrameSkip", 1, 6, false)
+
+        createSection(h, "Палитра", Icons.Palette)
+        local paletteFrame = Instance.new("Frame")
+        paletteFrame.Size = UDim2.new(1, 0, 0, 80)
+        paletteFrame.BackgroundTransparency = 1
+        paletteFrame.Parent = h
+        local grid = Instance.new("UIGridLayout")
+        grid.CellSize = UDim2.new(0, 40, 0, 40)
+        grid.CellPadding = UDim2.new(0, 6, 0, 6)
+        grid.SortOrder = Enum.SortOrder.LayoutOrder
+        grid.Parent = paletteFrame
+
+        local colors = {
+            Color3.fromRGB(0,255,255), Color3.fromRGB(255,0,150),
+            Color3.fromRGB(150,0,255), Color3.fromRGB(0,255,150),
+            Color3.fromRGB(255,200,0), Color3.fromRGB(255,80,80),
+            Color3.fromRGB(255,255,255), Color3.fromRGB(100,200,255),
+        }
+        for _, c in ipairs(colors) do
+            local sw = Instance.new("TextButton")
+            sw.BackgroundColor3 = c
+            sw.BorderSizePixel = 0
+            sw.Text = ""
+            sw.AutoButtonColor = false
+            sw.Parent = paletteFrame
+            corner(sw, 8)
+            stroke(sw, Color3.new(1,1,1), 1, 0.5)
+            sw.MouseButton1Click:Connect(function()
+                Config.ColorMode = "Static"
+                Config.StaticColor = c
+            end)
+        end
+
+        local fxRow = Instance.new("Frame")
+        fxRow.Size = UDim2.new(1, 0, 0, 38)
+        fxRow.BackgroundTransparency = 1
+        fxRow.Parent = h
+        local fxL = Instance.new("UIListLayout")
+        fxL.FillDirection = Enum.FillDirection.Horizontal
+        fxL.Padding = UDim.new(0, 6)
+        fxL.Parent = fxRow
+
+        local rainbowBtn = Instance.new("TextButton")
+        rainbowBtn.Size = UDim2.new(0.5, -3, 1, 0)
+        rainbowBtn.BackgroundColor3 = Color3.fromRGB(255,80,180)
+        rainbowBtn.Text = "Rainbow"
+        rainbowBtn.TextColor3 = Color3.new(1,1,1)
+        rainbowBtn.TextSize = 12
+        rainbowBtn.Font = Enum.Font.GothamBold
+        rainbowBtn.BorderSizePixel = 0
+        rainbowBtn.AutoButtonColor = false
+        rainbowBtn.Parent = fxRow
+        corner(rainbowBtn, 8)
+        rainbowBtn.MouseButton1Click:Connect(function() Config.ColorMode = "Rainbow" end)
+
+        local pastelBtn = Instance.new("TextButton")
+        pastelBtn.Size = UDim2.new(0.5, -3, 1, 0)
+        pastelBtn.BackgroundColor3 = Color3.fromRGB(200,180,255)
+        pastelBtn.Text = "Pastel"
+        pastelBtn.TextColor3 = Color3.fromRGB(60,40,100)
+        pastelBtn.TextSize = 12
+        pastelBtn.Font = Enum.Font.GothamBold
+        pastelBtn.BorderSizePixel = 0
+        pastelBtn.AutoButtonColor = false
+        pastelBtn.Parent = fxRow
+        corner(pastelBtn, 8)
+        pastelBtn.MouseButton1Click:Connect(function() Config.ColorMode = "Pastel" end)
+
+        createSection(h, "HEX", Icons.HexFilled)
+        local hexRow = Instance.new("Frame")
+        hexRow.Size = UDim2.new(1, 0, 0, 36)
+        hexRow.BackgroundColor3 = getT().bg2
+        hexRow.BackgroundTransparency = 0.35
+        hexRow.Parent = h
+        corner(hexRow, 8)
+        stroke(hexRow, getT().stroke, 1, 0.75)
+
+        local hexBox = Instance.new("TextBox")
+        hexBox.Size = UDim2.new(1, -80, 1, 0)
+        hexBox.Position = UDim2.new(0, 8, 0, 0)
+        hexBox.BackgroundTransparency = 1
+        hexBox.PlaceholderText = "#00FFFF"
+        hexBox.Text = colorToHex(Config.StaticColor)
+        hexBox.TextColor3 = getT().text
+        hexBox.PlaceholderColor3 = getT().subtext
+        hexBox.TextSize = 13
+        hexBox.Font = Enum.Font.Code
+        hexBox.TextXAlignment = Enum.TextXAlignment.Left
+        hexBox.Parent = hexRow
+
+        local applyBtn = Instance.new("TextButton")
+        applyBtn.Size = UDim2.new(0, 66, 0, 26)
+        applyBtn.Position = UDim2.new(1, -70, 0.5, -13)
+        applyBtn.BackgroundColor3 = getT().accent
+        applyBtn.Text = "OK"
+        applyBtn.TextColor3 = Color3.new(1,1,1)
+        applyBtn.TextSize = 12
+        applyBtn.Font = Enum.Font.GothamBold
+        applyBtn.BorderSizePixel = 0
+        applyBtn.Parent = hexRow
+        corner(applyBtn, 6)
+        applyBtn.MouseButton1Click:Connect(function()
+            local c = hexToColor(hexBox.Text)
+            if c then
+                Config.StaticColor = c
+                Config.ColorMode = "Static"
+            end
+        end)
+
+        createSection(h, "Сброс", Icons.Reset)
+        createButton(h, "Сбросить всё", Icons.Reset, function()
+            for k,v in pairs(Defaults) do Config[k] = v end
+            destroyAll()
+            buildGUI()
+        end, Color3.fromRGB(200,80,80))
+
+    elseif key == "Theme" then
+        local h = newList()
+        createSection(h, "Тема", Icons.Sun)
+        local themeFrame = Instance.new("Frame")
+        themeFrame.Size = UDim2.new(1, 0, 0, 80)
+        themeFrame.BackgroundTransparency = 1
+        themeFrame.Parent = h
+        local tl = Instance.new("UIGridLayout")
+        tl.CellSize = UDim2.new(0.5, -4, 0, 34)
+        tl.CellPadding = UDim.new(0, 6)
+        tl.Parent = themeFrame
+
+        for name, th in pairs(Themes) do
+            local b = Instance.new("TextButton")
+            b.BackgroundColor3 = th.accent
+            b.Text = name
+            b.TextColor3 = Color3.new(1,1,1)
+            b.TextSize = 12
+            b.Font = Enum.Font.GothamBold
+            b.BorderSizePixel = 0
+            b.Parent = themeFrame
+            corner(b, 8)
+            b.MouseButton1Click:Connect(function()
+                Config.Theme = name
+                destroyAll()
+                buildGUI()
+            end)
+        end
+
+        createSection(h, "Режим", Icons.Moon)
+        createToggle(h, "Тёмная тема", "DarkMode", Icons.Moon)
+
+    elseif key == "About" then
+        local h = newList()
+
+        local titleF = Instance.new("Frame")
+        titleF.Size = UDim2.new(1, 0, 0, 40)
+        titleF.BackgroundTransparency = 1
+        titleF.Parent = h
+        
+        local tIcon = iconLabel(titleF, Icons.Logo, 28, getT().accent)
+        tIcon.Size = UDim2.new(0, 28, 0, 28)
+        tIcon.Position = UDim2.new(0, 8, 0.5, -14)
+        
+        local ttl = textLabel(titleF, "magz1mESP", 18, getT().text, true)
+        ttl.Size = UDim2.new(1, -48, 0, 22)
+        ttl.Position = UDim2.new(0, 44, 0, 4)
+        local stl = textLabel(titleF, "Nebula v2.1  •  Executor: " .. EXECUTOR, 11, getT().subtext)
+        stl.Size = UDim2.new(1, -48, 0, 14)
+        stl.Position = UDim2.new(0, 44, 0, 24)
+
+        createSection(h, "Создатели", Icons.Star)
+        local creds = {
+            {name="magz1m", url="https://raw.githubusercontent.com/magz1m/quantai-assets/main/magz1m-avatar.png"},
+            {name="DeepSeek", url="https://raw.githubusercontent.com/magz1m/quantai-assets/main/deepseek-avatar.png"},
+            {name="DeepSeek Harness", url="https://raw.githubusercontent.com/magz1m/quantai-assets/main/deepseek-harness-avatar.png"},
+        }
+
+        local credFrame = Instance.new("Frame")
+        credFrame.Size = UDim2.new(1, 0, 0, 70)
+        credFrame.BackgroundTransparency = 1
+        credFrame.Parent = h
+        local cl = Instance.new("UIListLayout")
+        cl.FillDirection = Enum.FillDirection.Horizontal
+        cl.Padding = UDim.new(0, 8)
+        cl.HorizontalAlignment = Enum.HorizontalAlignment.Center
+        cl.Parent = credFrame
+
+        for _, c in ipairs(creds) do
+            local item = Instance.new("Frame")
+            item.Size = UDim2.new(0, 110, 0, 70)
+            item.BackgroundTransparency = 1
+            item.Parent = credFrame
+
+            local av = Instance.new("ImageLabel")
+            av.Size = UDim2.new(0, 44, 0, 44)
+            av.Position = UDim2.new(0.5, -22, 0, 0)
+            av.BackgroundColor3 = getT().bg2
+            av.BackgroundTransparency = 0.4
+            av.Image = c.url
+            av.Parent = item
+            corner(av, 22)
+            stroke(av, getT().stroke, 1, 0.5)
+
+            local nm = textLabel(item, c.name, 11, getT().text, true)
+            nm.Size = UDim2.new(1, 0, 0, 14)
+            nm.Position = UDim2.new(0, 0, 0, 48)
+            nm.TextXAlignment = Enum.TextXAlignment.Center
+        end
+
+        createSection(h, "Инфо", Icons.Hex)
+        local info = Instance.new("Frame")
+        info.Size = UDim2.new(1, 0, 0, 60)
+        info.BackgroundColor3 = getT().bg2
+        info.BackgroundTransparency = 0.4
+        info.Parent = h
+        corner(info, 8)
+        stroke(info, getT().stroke, 1, 0.75)
+
+        local infoText = textLabel(info,
+            "Версия: 2.1 «Nebula» (Fixed Icons)\n" ..
+            "Executor: " .. EXECUTOR .. "\n" ..
+            "Все функции выключены при запуске",
+            11, getT().subtext)
+        infoText.Size = UDim2.new(1, -16, 1, 0)
+        infoText.Position = UDim2.new(0, 8, 0, 0)
+        infoText.TextYAlignment = Enum.TextYAlignment.Center
+
+        createButton(h, "Выгрузить скрипт", Icons.Close, function()
+            safe(destroyAll)
+        end, Color3.fromRGB(200,80,80))
+    end
+end
+
+-- ============================================================
+-- ESP SYSTEM (Без изменений, вся логика отрисовки осталась)
+-- ============================================================
+local function createPlayerESP()
+    local obj = {
+        boneLines = {}, jointCircles = {}, glowLines = {}, boxLines = {},
+        filledBox = Drawing.new("Square"), edges3D = {}, cornerSegs = {},
+        tracer = Drawing.new("Line"), weaponTracer = Drawing.new("Line"),
+        offscreenArrow = Drawing.new("Triangle"), feetCircle = Drawing.new("Circle"),
+        halo = Drawing.new("Circle"), trailLines = {}, trailPositions = {},
+        nameText = Drawing.new("Text"), displayNameText = Drawing.new("Text"),
+        distanceText = Drawing.new("Text"), itemText = Drawing.new("Text"),
+        statusText = Drawing.new("Text"), healthBg = Drawing.new("Line"),
+        healthFill = Drawing.new("Line"), chams = nil, lastPos = nil,
+        alpha = 0, targetAlpha = 1, boneCache = {},
+    }
+    for i=1,15 do
+        local l = Drawing.new("Line"); l.Visible=false; l.Color=Config.StaticColor; l.Thickness=1; obj.boneLines[i]=l
+        local c = Drawing.new("Circle"); c.Visible=false; c.Radius=3; c.Filled=true; obj.jointCircles[i]=c
+        local g = Drawing.new("Line"); g.Visible=false; g.Thickness=Config.LineThickness*3; g.Transparency=0.6; obj.glowLines[i]=g
+    end
+    for i=1,4 do local l=Drawing.new("Line"); l.Visible=false; obj.boxLines[i]=l end
+    for i=1,12 do local l=Drawing.new("Line"); l.Visible=false; obj.edges3D[i]=l end
+    for i=1,8 do local l=Drawing.new("Line"); l.Visible=false; obj.cornerSegs[i]=l; local t=Drawing.new("Line"); t.Visible=false; obj.trailLines[i]=t end
+    
+    for _, t in ipairs({obj.nameText, obj.displayNameText, obj.distanceText, obj.itemText, obj.statusText}) do
+        t.Visible = false; t.Center = true; t.Outline = true; t.Font = 2
+    end
+    obj.filledBox.Visible=false; obj.filledBox.Filled=true; obj.filledBox.Transparency=0.65
+    obj.offscreenArrow.Visible=false; obj.feetCircle.Visible=false; obj.feetCircle.Thickness=2; obj.feetCircle.Filled=false
+    obj.halo.Visible=false; obj.halo.Filled=false; obj.halo.Thickness=2
+    return obj
+end
+
+local function isWhitelisted(player)
+    if Whitelist[player.UserId] then return true end
+    if Config.WhitelistFriends and LocalPlayer:IsFriendsWith(player.UserId) then return true end
+    return false
+end
+
+local function shouldRender(player)
+    if player == LocalPlayer then return false end
+    if Blacklist[player.UserId] then return false end
+    if Config.TeamCheck and player.Team == LocalPlayer.Team then return false end
+    if isWhitelisted(player) and Config.WhitelistFriends then return false end
+    return true
+end
+
+local function getHumanoidParts(char)
+    local h = char:FindFirstChildOfClass("Humanoid")
+    if not h then return nil end
+    if h.RigType == Enum.HumanoidRigType.R15 then
+        return {
+            Head=char:FindFirstChild("Head"), UpperTorso=char:FindFirstChild("UpperTorso"), LowerTorso=char:FindFirstChild("LowerTorso"),
+            LeftUpperArm=char:FindFirstChild("LeftUpperArm"), LeftLowerArm=char:FindFirstChild("LeftLowerArm"), LeftHand=char:FindFirstChild("LeftHand"),
+            RightUpperArm=char:FindFirstChild("RightUpperArm"), RightLowerArm=char:FindFirstChild("RightLowerArm"), RightHand=char:FindFirstChild("RightHand"),
+            LeftUpperLeg=char:FindFirstChild("LeftUpperLeg"), LeftLowerLeg=char:FindFirstChild("LeftLowerLeg"), LeftFoot=char:FindFirstChild("LeftFoot"),
+            RightUpperLeg=char:FindFirstChild("RightUpperLeg"), RightLowerLeg=char:FindFirstChild("RightLowerLeg"), RightFoot=char:FindFirstChild("RightFoot"),
+            HumanoidRootPart=char:FindFirstChild("HumanoidRootPart"),
+        }, "R15"
+    else
+        return {
+            Head=char:FindFirstChild("Head"), Torso=char:FindFirstChild("Torso"),
+            LeftArm=char:FindFirstChild("Left Arm"), RightArm=char:FindFirstChild("Right Arm"),
+            LeftLeg=char:FindFirstChild("Left Leg"), RightLeg=char:FindFirstChild("Right Leg"),
+            HumanoidRootPart=char:FindFirstChild("HumanoidRootPart"),
+        }, "R6"
+    end
+end
+
+local function project(v3)
+    local p, onScreen = Camera:WorldToViewportPoint(v3)
+    if not onScreen then return nil end
+    return Vector2.new(p.X, p.Y)
+end
+
+local function updateChams(player, obj, enabled)
+    if not player.Character then return end
+    if enabled and not obj.chams then
+        local hl = Instance.new("Highlight")
+        hl.Adornee = player.Character; hl.FillColor = getCurrentColor(); hl.OutlineColor = getCurrentColor()
+        hl.FillTransparency = Config.ShowChamsGradient and 0.7 or 0.6; hl.OutlineTransparency = 0.2
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop; hl.Parent = GUI; obj.chams = hl
+    elseif not enabled and obj.chams then
+        obj.chams:Destroy(); obj.chams = nil
+    elseif obj.chams then
+        obj.chams.FillColor = getCurrentColor(); obj.chams.OutlineColor = getCurrentColor()
+    end
+end
+
+local function updateESP(player, obj, dt)
+    if not Config.ESPEnabled or not shouldRender(player) then
+        for _, l in ipairs(obj.boneLines) do l.Visible = false end
+        for _, l in ipairs(obj.boxLines) do l.Visible = false end
+        for _, l in ipairs(obj.edges3D) do l.Visible = false end
+        for _, l in ipairs(obj.cornerSegs) do l.Visible = false end
+        for _, l in ipairs(obj.glowLines) do l.Visible = false end
+        for _, l in ipairs(obj.trailLines) do l.Visible = false end
+        for _, c in ipairs(obj.jointCircles) do c.Visible = false end
+        for _, t in ipairs({obj.nameText, obj.displayNameText, obj.distanceText, obj.itemText, obj.statusText}) do t.Visible = false end
+        obj.filledBox.Visible = false; obj.tracer.Visible = false; obj.weaponTracer.Visible = false
+        obj.offscreenArrow.Visible = false; obj.feetCircle.Visible = false; obj.halo.Visible = false
+        obj.healthBg.Visible = false; obj.healthFill.Visible = false
+        if obj.chams then obj.chams:Destroy(); obj.chams = nil end
+        return
+    end
+
+    local char = player.Character
+    if not char then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then return end
+
+    local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("UpperTorso")
+    if not root then return end
+
+    local dist = (root.Position - Camera.CFrame.Position).Magnitude
+    if dist > Config.MaxDistance then return end
+
+    local color = getCurrentColor()
+    local transp = Config.ESPTransparency
+    local thick = Config.LineThickness
+
+    if Config.FadeAnimations then
+        obj.alpha = obj.alpha + (obj.targetAlpha - obj.alpha) * math.min(dt * 8, 1)
+    else
+        obj.alpha = 1
+    end
+
+    updateChams(player, obj, Config.ShowChams or Config.ShowChamsGradient)
+
+    local parts, rig = getHumanoidParts(char)
+    if not parts then return end
+
+    local head, torso, lowerTorso
+    if rig == "R15" then
+        head = parts.Head; torso = parts.UpperTorso; lowerTorso = parts.LowerTorso
+    else
+        head = parts.Head; torso = parts.Torso; lowerTorso = parts.Torso
+    end
+    if not head or not torso or not lowerTorso then return end
+
+    local screenHead = project(head.Position + Vector3.new(0, 0.7, 0))
+    local screenTorso = project(torso.Position)
+    local screenFeet = project(lowerTorso.Position - Vector3.new(0, 2.2, 0))
+
+    if not screenHead or not screenTorso or not screenFeet then
+        if Config.ShowOffscreenArrow then
+            local screenPos, onScreen = Camera:WorldToViewportPoint(torso.Position)
+            if not onScreen then
+                local vp = Camera.ViewportSize
+                local center = vp / 2
+                local dx = screenPos.X - center.X
+                local dy = screenPos.Y - center.Y
+                local len = math.sqrt(dx*dx + dy*dy)
+                if len > 0 then
+                    local nx, ny = dx/len, dy/len
+                    local radius = math.min(vp.X, vp.Y) / 2 - 40
+                    local ax = center.X + nx * radius
+                    local ay = center.Y + ny * radius
+                    obj.offscreenArrow.Visible = true
+                    obj.offscreenArrow.Color = color; obj.offscreenArrow.Transparency = transp
+                    obj.offscreenArrow.PointA = Vector2.new(ax + nx*12, ay + ny*12)
+                    obj.offscreenArrow.PointB = Vector2.new(ax - ny*8, ay + nx*8)
+                    obj.offscreenArrow.PointC = Vector2.new(ax + ny*8, ay - nx*8)
+                end
+            end
+        end
+        return
+    end
+    obj.offscreenArrow.Visible = false
+
+    local boxTop = screenHead.Y - 8
+    local boxBottom = screenFeet.Y
+    local boxH = boxBottom - boxTop
+    local boxW = boxH * 0.55
+    local boxLeft = screenTorso.X - boxW/2
+    local boxRight = screenTorso.X + boxW/2
+    local boxCenterX = screenTorso.X
+
+    local finalTrans = transp * obj.alpha
+    if Config.Pulsation then finalTrans = finalTrans * (0.7 + math.sin(tick()*4) * 0.3) end
+
+    if Config.ShowBox then
+        local tl = Vector2.new(boxLeft, boxTop); local tr = Vector2.new(boxRight, boxTop)
+        local bl = Vector2.new(boxLeft, boxBottom); local br = Vector2.new(boxRight, boxBottom)
+        local pairs4 = {{tl,tr},{tr,br},{br,bl},{bl,tl}}
+        for i, p in ipairs(pairs4) do
+            local l = obj.boxLines[i]
+            l.From = p[1]; l.To = p[2]; l.Color = color; l.Thickness = thick; l.Transparency = finalTrans; l.Visible = true
+        end
+    else
+        for _, l in ipairs(obj.boxLines) do l.Visible = false end
+    end
+
+    if Config.ShowFilledBox then
+        obj.filledBox.Size = Vector2.new(boxW, boxH); obj.filledBox.Position = Vector2.new(boxLeft, boxTop)
+        obj.filledBox.Color = color; obj.filledBox.Transparency = 0.75 * obj.alpha; obj.filledBox.Visible = true
+    else
+        obj.filledBox.Visible = false
+    end
+
+    if Config.ShowCornerBox then
+        local cl = boxW * 0.25; local ch = boxH * 0.2
+        local c = {
+            {Vector2.new(boxLeft, boxTop), Vector2.new(boxLeft+cl, boxTop)},
+            {Vector2.new(boxLeft, boxTop), Vector2.new(boxLeft, boxTop+ch)},
+            {Vector2.new(boxRight, boxTop), Vector2.new(boxRight-cl, boxTop)},
+            {Vector2.new(boxRight, boxTop), Vector2.new(boxRight, boxTop+ch)},
+            {Vector2.new(boxLeft, boxBottom), Vector2.new(boxLeft+cl, boxBottom)},
+            {Vector2.new(boxLeft, boxBottom), Vector2.new(boxLeft, boxBottom-ch)},
+            {Vector2.new(boxRight, boxBottom), Vector2.new(boxRight-cl, boxBottom)},
+            {Vector2.new(boxRight, boxBottom), Vector2.new(boxRight, boxBottom-ch)},
+        }
+        for i, seg in ipairs(c) do
+            local l = obj.cornerSegs[i]
+            l.From = seg[1]; l.To = seg[2]; l.Color = color; l.Thickness = thick * 1.8; l.Transparency = finalTrans; l.Visible = true
+        end
+    else
+        for _, l in ipairs(obj.cornerSegs) do l.Visible = false end
+    end
+
+    if Config.Show3DBox then
+        local cf = torso.CFrame; local sz = Vector3.new(2, 5, 1); local corners = {}
+        for i=-1,1,2 do for j=-1,1,2 do for k=-1,1,2 do
+            corners[#corners+1] = cf * Vector3.new(i*sz.X/2, j*sz.Y/2, k*sz.Z/2)
+        end end end
+        local edges = {{1,2},{1,3},{1,5},{2,4},{2,6},{3,4},{3,7},{4,8},{5,6},{5,7},{6,8},{7,8}}
+        for i, e in ipairs(edges) do
+            local a = project(corners[e[1]]); local b = project(corners[e[2]])
+            local l = obj.edges3D[i]
+            if a and b then
+                l.From = a; l.To = b; l.Color = color; l.Thickness = thick; l.Transparency = finalTrans; l.Visible = true
+            else l.Visible = false end
+        end
+    else
+        for _, l in ipairs(obj.edges3D) do l.Visible = false end
+    end
+
+    local showSkel = Config.ShowSkeleton and dist < Config.SkeletonDistance
+    if showSkel then
+        local bonePairs
+        if rig == "R15" then
+            bonePairs = {
+                {parts.Head, parts.UpperTorso}, {parts.UpperTorso, parts.LowerTorso},
+                {parts.UpperTorso, parts.LeftUpperArm}, {parts.LeftUpperArm, parts.LeftLowerArm}, {parts.LeftLowerArm, parts.LeftHand},
+                {parts.UpperTorso, parts.RightUpperArm}, {parts.RightUpperArm, parts.RightLowerArm}, {parts.RightLowerArm, parts.RightHand},
+                {parts.LowerTorso, parts.LeftUpperLeg}, {parts.LeftUpperLeg, parts.LeftLowerLeg}, {parts.LeftLowerLeg, parts.LeftFoot},
+                {parts.LowerTorso, parts.RightUpperLeg}, {parts.RightUpperLeg, parts.RightLowerLeg}, {parts.RightLowerLeg, parts.RightFoot},
+            }
+        else
+            bonePairs = {
+                {parts.Head, parts.Torso}, {parts.Torso, parts.LeftArm}, {parts.Torso, parts.RightArm},
+                {parts.Torso, parts.LeftLeg}, {parts.Torso, parts.RightLeg},
+            }
+        end
+
+        for i, pair in ipairs(bonePairs) do
+            local from = pair[1]; local to = pair[2]
+            if from and to then
+                local a = project(from.Position); local b = project(to.Position)
+                if a and b then
+                    local l = obj.boneLines[i]
+                    l.From = a; l.To = b; l.Color = color; l.Thickness = thick; l.Transparency = finalTrans; l.Visible = true
+                    if Config.ShowGlow then
+                        local g = obj.glowLines[i]
+                        g.From = a; g.To = b; g.Color = color; g.Thickness = thick * 3; g.Transparency = finalTrans * 0.6; g.Visible = true
+                    else obj.glowLines[i].Visible = false end
+                    if Config.ShowJoints then
+                        local c = obj.jointCircles[i]
+                        c.Position = a; c.Color = color; c.Transparency = finalTrans; c.Radius = 3; c.Visible = true
+                    else obj.jointCircles[i].Visible = false end
+                else
+                    obj.boneLines[i].Visible = false; obj.glowLines[i].Visible = false
+                    if obj.jointCircles[i] then obj.jointCircles[i].Visible = false end
+                end
+            end
+        end
+        for i=#bonePairs+1, #obj.boneLines do
+            obj.boneLines[i].Visible = false; obj.glowLines[i].Visible = false
+            if obj.jointCircles[i] then obj.jointCircles[i].Visible = false end
+        end
+    else
+        for _, l in ipairs(obj.boneLines) do l.Visible = false end
+        for _, l in ipairs(obj.glowLines) do l.Visible = false end
+        for _, c in ipairs(obj.jointCircles) do c.Visible = false end
+    end
+
+    if Config.ShowTracer then
+        obj.tracer.From = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
+        obj.tracer.To = Vector2.new(boxCenterX, boxBottom)
+        obj.tracer.Color = color; obj.tracer.Thickness = thick; obj.tracer.Transparency = finalTrans; obj.tracer.Visible = true
+    else obj.tracer.Visible = false end
+
+    if Config.ShowWeaponTracer then
+        local myChar = LocalPlayer.Character
+        local myHand = myChar and (myChar:FindFirstChild("RightHand") or myChar:FindFirstChild("Right Arm"))
+        if myHand then
+            local a = project(myHand.Position)
+            if a then
+                obj.weaponTracer.From = a; obj.weaponTracer.To = Vector2.new(boxCenterX, boxTop + boxH/2)
+                obj.weaponTracer.Color = color; obj.weaponTracer.Thickness = thick * 0.8; obj.weaponTracer.Transparency = finalTrans * 0.7; obj.weaponTracer.Visible = true
+            else obj.weaponTracer.Visible = false end
+        else obj.weaponTracer.Visible = false end
+    else obj.weaponTracer.Visible = false end
+
+    if Config.ShowFeetCircle then
+        local fp = project(lowerTorso.Position - Vector3.new(0, 2.5, 0))
+        if fp then
+            obj.feetCircle.Position = fp; obj.feetCircle.Radius = math.max(14, boxH * 0.2)
+            obj.feetCircle.Color = color; obj.feetCircle.Transparency = finalTrans * 0.8; obj.feetCircle.Thickness = thick; obj.feetCircle.Visible = true
+        end
+    else obj.feetCircle.Visible = false end
+
+    if Config.ShowHalo then
+        local hp = project(head.Position + Vector3.new(0, 1, 0))
+        if hp then
+            obj.halo.Position = hp; obj.halo.Radius = 12 + math.sin(tick()*3) * 2
+            obj.halo.Color = color; obj.halo.Transparency = finalTrans * 0.8; obj.halo.Thickness = thick; obj.halo.Visible = true
+        end
+    else obj.halo.Visible = false end
+
+    if Config.ShowTrail then
+        local pos = root.Position
+        if not obj.lastPos or (pos - obj.lastPos).Magnitude > 2 then
+            table.insert(obj.trailPositions, pos)
+            if #obj.trailPositions > 8 then table.remove(obj.trailPositions, 1) end
+            obj.lastPos = pos
+        end
+        for i=1, #obj.trailPositions-1 do
+            local a = project(obj.trailPositions[i]); local b = project(obj.trailPositions[i+1])
+            local line = obj.trailLines[i]
+            if line and a and b then
+                line.From = a; line.To = b; line.Color = color
+                line.Thickness = thick * (i / #obj.trailPositions)
+                line.Transparency = finalTrans * (i / #obj.trailPositions) * 0.7; line.Visible = true
+            elseif line then line.Visible = false end
+        end
+        for i=#obj.trailPositions, #obj.trailLines do obj.trailLines[i].Visible = false end
+    else
+        for _, l in ipairs(obj.trailLines) do l.Visible = false end
+        obj.trailPositions = {}
+    end
+
+    local yBase = boxTop - 4
+    local ts = Config.TextSize
+
+    if Config.ShowName and screenHead then
+        obj.nameText.Text = player.Name; obj.nameText.Position = Vector2.new(boxCenterX, yBase - ts)
+        obj.nameText.Color = color; obj.nameText.Size = ts; obj.nameText.Transparency = finalTrans; obj.nameText.Visible = true
+        yBase = yBase - ts
+    else obj.nameText.Visible = false end
+
+    if Config.ShowDisplayName and screenHead then
+        obj.displayNameText.Text = "(" .. player.DisplayName .. ")"
+        obj.displayNameText.Position = Vector2.new(boxCenterX, yBase - ts + 2)
+        obj.displayNameText.Color = color; obj.displayNameText.Size = ts - 2; obj.displayNameText.Transparency = finalTrans * 0.9; obj.displayNameText.Visible = true
+        yBase = yBase - ts + 2
+    else obj.displayNameText.Visible = false end
+
+    if Config.ShowDistance and screenHead then
+        obj.distanceText.Text = "[" .. math.floor(dist) .. "m]"
+        obj.distanceText.Position = Vector2.new(boxCenterX, yBase - ts + 2)
+        obj.distanceText.Color = color; obj.distanceText.Size = ts - 2; obj.distanceText.Transparency = finalTrans * 0.9; obj.distanceText.Visible = true
+    else obj.distanceText.Visible = false end
+
+    if Config.ShowItem and screenHead then
+        local tool = char:FindFirstChildOfClass("Tool")
+        if tool then
+            obj.itemText.Text = "[" .. tool.Name .. "]"; obj.itemText.Position = Vector2.new(boxCenterX, boxBottom + 6)
+            obj.itemText.Color = color; obj.itemText.Size = ts - 2; obj.itemText.Transparency = finalTrans; obj.itemText.Visible = true
+        else obj.itemText.Visible = false end
+    else obj.itemText.Visible = false end
+
+    if Config.ShowStatusIcon then
+        local st = ""
+        if humanoid.Health < humanoid.MaxHealth * 0.3 then st = "!" end
+        if st ~= "" and screenHead then
+            obj.statusText.Text = st; obj.statusText.Position = Vector2.new(boxLeft - 14, boxTop + boxH/2)
+            obj.statusText.Color = color; obj.statusText.Size = ts + 4; obj.statusText.Transparency = finalTrans; obj.statusText.Visible = true
+        else obj.statusText.Visible = false end
+    else obj.statusText.Visible = false end
+
+    if Config.ShowHealthBar then
+        local hx = boxLeft - 6; local hh = boxH; local hTop = boxTop; local hBot = boxBottom
+        local hpct = humanoid.Health / humanoid.MaxHealth; local fillTop = hBot - hh * hpct
+        obj.healthBg.From = Vector2.new(hx, hTop); obj.healthBg.To = Vector2.new(hx, hBot)
+        obj.healthBg.Color = Color3.fromRGB(30, 20, 50); obj.healthBg.Thickness = 4; obj.healthBg.Transparency = finalTrans * 0.6; obj.healthBg.Visible = true
+        obj.healthFill.From = Vector2.new(hx, fillTop); obj.healthFill.To = Vector2.new(hx, hBot)
+        obj.healthFill.Color = Color3.fromRGB(255*(1-hpct), 255*hpct, 50); obj.healthFill.Thickness = 4; obj.healthFill.Transparency = finalTrans; obj.healthFill.Visible = true
+    else
+        obj.healthBg.Visible = false; obj.healthFill.Visible = false
+    end
+
+    MinimapData[player] = {pos = root.Position, name = player.Name, color = color}
+end
+
+-- ============================================================
+-- MINIMAP
+-- ============================================================
+local MinimapFrame, RadarFrame
+local function setupMinimap()
+    if MinimapFrame then return end
+    local T = getT()
+    MinimapFrame = Instance.new("Frame")
+    MinimapFrame.Size = UDim2.new(0, 140, 0, 140)
+    MinimapFrame.Position = UDim2.new(1, -160, 1, -160)
+    MinimapFrame.BackgroundColor3 = T.bg1; MinimapFrame.BackgroundTransparency = 0.25
+    MinimapFrame.BorderSizePixel = 0; MinimapFrame.Visible = false; MinimapFrame.Parent = GUI
+    corner(MinimapFrame, 70); stroke(MinimapFrame, T.stroke, 1.5, 0.4)
+    local lbl = textLabel(MinimapFrame, "N", 12, T.accent, true)
+    lbl.Size = UDim2.new(1, 0, 0, 16); lbl.Position = UDim2.new(0, 0, 0, 4); lbl.TextXAlignment = Enum.TextXAlignment.Center
+end
+
+local function updateMinimap()
+    if not MinimapFrame then return end
+    MinimapFrame.Visible = Config.ShowMinimap
+    if not Config.ShowMinimap then return end
+
+    for _, c in ipairs(MinimapFrame:GetChildren()) do
+        if c:IsA("Frame") and c.Name == "Dot" then c:Destroy() end
+    end
+
+    local center = Vector2.new(70, 70); local range = 500
+    for p, data in pairs(MinimapData) do
+        local rel = data.pos - Camera.CFrame.Position
+        local angle = math.atan2(rel.X, rel.Z) - math.atan2(Camera.CFrame.LookVector.X, Camera.CFrame.LookVector.Z)
+        local dist = math.sqrt(rel.X^2 + rel.Z^2)
+        if dist < range then
+            local r = dist / range * 60
+            local x = center.X + math.sin(angle) * r
+            local y = center.Y - math.cos(angle) * r
+            local dot = Instance.new("Frame")
+            dot.Name = "Dot"; dot.Size = UDim2.new(0, 6, 0, 6); dot.Position = UDim2.new(0, x-3, 0, y-3)
+            dot.BackgroundColor3 = data.color; dot.BorderSizePixel = 0; dot.Parent = MinimapFrame; corner(dot, 3)
+        end
+    end
+    local selfDot = Instance.new("Frame")
+    selfDot.Name = "Dot"; selfDot.Size = UDim2.new(0, 8, 0, 8); selfDot.Position = UDim2.new(0, 66, 0, 66)
+    selfDot.BackgroundColor3 = Color3.new(1,1,1); selfDot.BorderSizePixel = 0; selfDot.Parent = MinimapFrame; corner(selfDot, 4)
+end
+
+local function setupRadar()
+    if RadarFrame then return end
+    local T = getT()
+    RadarFrame = Instance.new("Frame")
+    RadarFrame.Size = UDim2.new(0, 120, 0, 120); RadarFrame.Position = UDim2.new(0, 20, 1, -140)
+    RadarFrame.BackgroundColor3 = T.bg1; RadarFrame.BackgroundTransparency = 0.4; RadarFrame.BorderSizePixel = 0
+    RadarFrame.Visible = false; RadarFrame.Parent = GUI; corner(RadarFrame, 60); stroke(RadarFrame, T.stroke, 1.5, 0.4)
+end
+
+local function updateRadar()
+    if not RadarFrame then return end
+    RadarFrame.Visible = Config.ShowRadar
+end
+
+-- ============================================================
+-- MAIN LOOP & INIT
+-- ============================================================
+local mainConnection
+local function mainLoop()
+    if not Config.ESPEnabled then return end
+    FrameCounter = FrameCounter + 1
+    if FrameCounter % math.max(1, Config.FrameSkip) ~= 0 then return end
+    for player, obj in pairs(ESPObjects) do
+        if player.Parent then safe(updateESP, player, obj, 1/60 * Config.FrameSkip)
+        else ESPObjects[player] = nil end
+    end
+    safe(updateMinimap); safe(updateRadar)
+end
+
+local function onPlayerAdded(player)
+    if player == LocalPlayer then return end
+    if not ESPObjects[player] then ESPObjects[player] = createPlayerESP() end
+end
+
+local function onPlayerRemoving(player)
+    local obj = ESPObjects[player]
+    if obj then
+        for _, l in ipairs(obj.boneLines) do l:Remove() end
+        for _, c in ipairs(obj.jointCircles) do c:Remove() end
+        for _, l in ipairs(obj.glowLines) do l:Remove() end
+        for _, l in ipairs(obj.boxLines) do l:Remove() end
+        for _, l in ipairs(obj.edges3D) do l:Remove() end
+        for _, l in ipairs(obj.cornerSegs) do l:Remove() end
+        for _, l in ipairs(obj.trailLines) do l:Remove() end
+        obj.filledBox:Remove(); obj.tracer:Remove(); obj.weaponTracer:Remove(); obj.offscreenArrow:Remove()
+        obj.feetCircle:Remove(); obj.halo:Remove(); obj.nameText:Remove(); obj.displayNameText:Remove()
+        obj.distanceText:Remove(); obj.itemText:Remove(); obj.statusText:Remove(); obj.healthBg:Remove(); obj.healthFill:Remove()
+        if obj.chams then obj.chams:Destroy() end
+        ESPObjects[player] = nil
+    end
+end
+
+function destroyAll()
+    for player, obj in pairs(ESPObjects) do onPlayerRemoving(player) end
+    ESPObjects = {}
+    if GUI then GUI:Destroy(); GUI = nil end
+    if mainConnection then mainConnection:Disconnect() end
+end
+
+local function init()
+    buildGUI(); setupMinimap(); setupRadar()
+    for _, p in pairs(Players:GetPlayers()) do onPlayerAdded(p) end
+    Players.PlayerAdded:Connect(onPlayerAdded)
+    Players.PlayerRemoving:Connect(onPlayerRemoving)
+    mainConnection = RunService.RenderStepped:Connect(function(dt) safe(mainLoop, dt) end)
+end
+
+init()
