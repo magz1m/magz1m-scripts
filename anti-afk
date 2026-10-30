@@ -1,0 +1,519 @@
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local LP = Players.LocalPlayer
+
+local VirtualUser
+pcall(function()
+    if getgenv then VirtualUser = getgenv().VirtualUser end
+    if not VirtualUser then VirtualUser = game:GetService("VirtualUser") end
+end)
+
+if _G.__AAFX_FINAL then return end
+_G.__AAFX_FINAL = true
+
+local LOCALES = {
+    ru = { uptime = "АПТАЙМ", act = "Действий", err = "Ошибок", mCam = "камера", mVU = "ввод", mWalk = "шаги", mAll = "всё" },
+    en = { uptime = "UPTIME", act = "Actions", err = "Errors", mCam = "camera", mVU = "input", mWalk = "walk", mAll = "all" }
+}
+
+local function getLocale()
+    if getgenv and getgenv().AAFX_LOCALE and LOCALES[getgenv().AAFX_LOCALE] then return getgenv().AAFX_LOCALE end
+    if LP and LP.LocaleId and LP.LocaleId:sub(1, 2) == "ru" then return "ru" end
+    return "en"
+end
+
+local LCL = LOCALES[getLocale()]
+local METHODS = { "camera", "virtualuser", "walk", "all" }
+local METHOD_LABEL = { camera = LCL.mCam, virtualuser = LCL.mVU, walk = LCL.mWalk, all = LCL.mAll }
+
+local Q = {
+    enabled = true, interval = 60, cameraShake = 0.05, useVirtualUser = true,
+    userActiveWin = 5, sizeW = 280, sizeH = 64, sizeHExpanded = 88, corner = 14,
+    opacity = 0.85, padX = 20, padY = 20
+}
+
+local C = {
+    bg1 = Color3.fromRGB(15, 15, 20), bg2 = Color3.fromRGB(20, 20, 28),
+    text = Color3.fromRGB(255, 255, 255), sub = Color3.fromRGB(160, 160, 176),
+    muted = Color3.fromRGB(107, 107, 128), ac = Color3.fromRGB(124, 92, 255),
+    ac2 = Color3.fromRGB(167, 139, 250), ok = Color3.fromRGB(74, 222, 128),
+    warn = Color3.fromRGB(251, 191, 36), err = Color3.fromRGB(248, 113, 113)
+}
+
+local State = {
+    running = true, alive = true, startTime = os.clock(),
+    nextAction = os.clock() + Q.interval, lastUserInput = 0,
+    actions = 0, errors = 0, consecErrs = 0, status = "active",
+    methodIdx = 1, isCollapsed = false, isDragging = false, isHovering = false
+}
+
+local function isAlive()
+    local char = LP and LP.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    return hum and hum.Health > 0
+end
+
+local function M_CAM()
+    if os.clock() - State.lastUserInput < Q.userActiveWin then return true end
+    local cam = workspace.CurrentCamera
+    if not cam then return false end
+    pcall(function()
+        local orig = cam.CFrame
+        local amt = math.rad(Q.cameraShake)
+        cam.CFrame = orig * CFrame.Angles(0, amt, 0) task.wait(0.1)
+        cam.CFrame = orig * CFrame.Angles(0, -amt, 0) task.wait(0.1)
+        cam.CFrame = orig
+    end)
+    return true
+end
+
+local function M_VU()
+    if not Q.useVirtualUser or not VirtualUser then return false end
+    pcall(function()
+        VirtualUser:CaptureController()
+        VirtualUser:SetKeyDown("shift") task.wait(0.05) VirtualUser:SetKeyUp("shift")
+    end)
+    return true
+end
+
+local function M_WALK()
+    if not isAlive() then return false end
+    local char = LP.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    pcall(function()
+        hum:Move(Vector3.new(0, 0, 0.01), false) task.wait(0.1) hum:Move(Vector3.new(0, 0, 0), false)
+    end)
+    return true
+end
+
+local function runCycle()
+    State.nextAction = os.clock() + Q.interval
+    if not Q.enabled or not isAlive() then return end
+    local m = METHODS[State.methodIdx]
+    local methodsToRun = (m == "all") and {M_CAM, M_VU, M_WALK} or (m == "camera") and {M_CAM} or (m == "virtualuser") and {M_VU, M_CAM} or {M_WALK}
+    local success = false
+    for _, fn in ipairs(methodsToRun) do if fn() then success = true break end end
+    if success then State.actions = State.actions + 1 State.consecErrs = 0 State.status = "active"
+    else State.errors = State.errors + 1 State.consecErrs = State.consecErrs + 1 if State.consecErrs >= 3 then State.status = "error" end end
+end
+
+local UI = { root = nil, gui = nil }
+
+local function buildUI()
+    if UI.gui or not LP then return end
+    local pg = LP:FindFirstChildOfClass("PlayerGui") or LP:WaitForChild("PlayerGui", 10)
+    if not pg then return end
+
+    UI.gui = Instance.new("ScreenGui")
+    UI.gui.Name = "AAFX_Final"
+    UI.gui.ResetOnSpawn = false
+    UI.gui.IgnoreGuiInset = true
+    UI.gui.DisplayOrder = 9999
+    UI.gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    UI.gui.Parent = pg
+
+    UI.root = Instance.new("Frame")
+    UI.root.Name = "Root"
+    UI.root.Size = UDim2.fromOffset(Q.sizeW, Q.sizeH)
+    UI.root.Position = UDim2.new(1, -Q.sizeW - Q.padX, 0, Q.padY)
+    UI.root.BackgroundTransparency = 1
+    UI.root.ClipsDescendants = false
+    UI.root.Parent = UI.gui
+
+    local sc = Instance.new("UIScale")
+    sc.Scale = 0.8
+    sc.Parent = UI.root
+
+    local sd1 = Instance.new("Frame")
+    sd1.AnchorPoint = Vector2.new(0.5, 0.5)
+    sd1.Position = UDim2.new(0.5, 0, 0.5, 2)
+    sd1.Size = UDim2.new(1, 6, 1, 6)
+    sd1.BackgroundColor3 = Color3.new(0,0,0)
+    sd1.BackgroundTransparency = 0.7
+    sd1.ZIndex = 0
+    sd1.Parent = UI.root
+    local uic1 = Instance.new("UICorner") uic1.CornerRadius = UDim.new(0, Q.corner) uic1.Parent = sd1
+
+    local sd2 = Instance.new("Frame")
+    sd2.AnchorPoint = Vector2.new(0.5, 0.5)
+    sd2.Position = UDim2.new(0.5, 0, 0.5, 6)
+    sd2.Size = UDim2.new(1, 20, 1, 20)
+    sd2.BackgroundColor3 = Color3.new(0,0,0)
+    sd2.BackgroundTransparency = 0.85
+    sd2.ZIndex = 0
+    sd2.Parent = UI.root
+    local uic2 = Instance.new("UICorner") uic2.CornerRadius = UDim.new(0, Q.corner + 8) uic2.Parent = sd2
+
+    local og = Instance.new("Frame")
+    og.AnchorPoint = Vector2.new(0.5, 0.5)
+    og.Position = UDim2.new(0.5, 0, 0.5, 0)
+    og.Size = UDim2.new(1, 16, 1, 16)
+    og.BackgroundColor3 = C.ac
+    og.BackgroundTransparency = 0.88
+    og.ZIndex = 0
+    og.Parent = UI.root
+    local uic3 = Instance.new("UICorner") uic3.CornerRadius = UDim.new(0, Q.corner + 6) uic3.Parent = og
+
+    UI.bg = Instance.new("Frame")
+    UI.bg.Name = "BG"
+    UI.bg.Size = UDim2.new(1, 0, 1, 0)
+    UI.bg.BackgroundColor3 = C.bg1
+    UI.bg.BackgroundTransparency = 1 - Q.opacity
+    UI.bg.ClipsDescendants = true
+    UI.bg.ZIndex = 1
+    UI.bg.Parent = UI.root
+    local uic4 = Instance.new("UICorner") uic4.CornerRadius = UDim.new(0, Q.corner) uic4.Parent = UI.bg
+
+    local gr = Instance.new("Frame")
+    gr.Size = UDim2.new(1, 0, 1, 0)
+    gr.BackgroundColor3 = Color3.new(1,1,1)
+    gr.BackgroundTransparency = 0.15
+    gr.ZIndex = 2
+    gr.Parent = UI.bg
+    local uic5 = Instance.new("UICorner") uic5.CornerRadius = UDim.new(0, Q.corner) uic5.Parent = gr
+    local uig1 = Instance.new("UIGradient")
+    uig1.Color = ColorSequence.new{ ColorSequenceKeypoint.new(0, C.bg1), ColorSequenceKeypoint.new(1, C.bg2) }
+    uig1.Parent = gr
+    
+    local sh = Instance.new("Frame")
+    sh.Size = UDim2.new(1, 0, 0.5, 0)
+    sh.BackgroundColor3 = Color3.new(1,1,1)
+    sh.BackgroundTransparency = 0.97
+    sh.ZIndex = 3
+    sh.Parent = UI.bg
+    local uic6 = Instance.new("UICorner") uic6.CornerRadius = UDim.new(0, Q.corner) uic6.Parent = sh
+    local uig2 = Instance.new("UIGradient")
+    uig2.Transparency = NumberSequence.new{ NumberSequenceKeypoint.new(0, 0.96), NumberSequenceKeypoint.new(1, 1) }
+    uig2.Parent = sh
+
+    local st = Instance.new("UIStroke")
+    st.Thickness = 1
+    st.Transparency = 0.5
+    st.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    st.Parent = UI.bg
+    local stg = Instance.new("UIGradient")
+    stg.Color = ColorSequence.new{ ColorSequenceKeypoint.new(0, C.ac), ColorSequenceKeypoint.new(1, C.ac2) }
+    stg.Parent = st
+    UI.stroke = st
+
+    local sm = Instance.new("Frame")
+    sm.Size = UDim2.new(0, 80, 1, 0)
+    sm.Position = UDim2.new(0, -80, 0, 0)
+    sm.BackgroundColor3 = Color3.new(1,1,1)
+    sm.BackgroundTransparency = 0.8
+    sm.ZIndex = 9
+    sm.Parent = UI.bg
+    local smg = Instance.new("UIGradient")
+    smg.Rotation = 20
+    smg.Transparency = NumberSequence.new{ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.5, 0.3), NumberSequenceKeypoint.new(1, 1) }
+    smg.Parent = sm
+    UI.shimmer = sm
+
+    local dotWrap = Instance.new("Frame")
+    dotWrap.Size = UDim2.new(0, 12, 0, 12)
+    dotWrap.Position = UDim2.new(0, 16, 0.5, 0)
+    dotWrap.AnchorPoint = Vector2.new(0, 0.5)
+    dotWrap.BackgroundTransparency = 1
+    dotWrap.ZIndex = 5
+    dotWrap.Parent = UI.bg
+    
+    UI.dotScale = Instance.new("UIScale")
+    UI.dotScale.Scale = 1
+    UI.dotScale.Parent = dotWrap
+
+    local glow = Instance.new("Frame")
+    glow.Size = UDim2.new(1, 8, 1, 8)
+    glow.AnchorPoint = Vector2.new(0.5, 0.5)
+    glow.Position = UDim2.new(0.5, 0, 0.5, 0)
+    glow.BackgroundColor3 = C.ok
+    glow.BackgroundTransparency = 0.6
+    glow.ZIndex = 4
+    glow.Parent = dotWrap
+    local uic7 = Instance.new("UICorner") uic7.CornerRadius = UDim.new(1, 0) uic7.Parent = glow
+    UI.glow = glow
+
+    local dot = Instance.new("Frame")
+    dot.Size = UDim2.new(1, 0, 1, 0)
+    dot.BackgroundColor3 = C.ok
+    dot.ZIndex = 5
+    dot.Parent = dotWrap
+    local uic8 = Instance.new("UICorner") uic8.CornerRadius = UDim.new(1, 0) uic8.Parent = dot
+    UI.dot = dot
+
+    local info = Instance.new("Frame")
+    info.Position = UDim2.new(0, 40, 0, 0)
+    info.Size = UDim2.new(1, -40 - 100, 1, 0)
+    info.BackgroundTransparency = 1
+    info.ZIndex = 5
+    info.Parent = UI.bg
+    
+    local nLbl = Instance.new("TextLabel")
+    nLbl.Position = UDim2.new(0, 0, 0, 8)
+    nLbl.Size = UDim2.new(1, 0, 0, 18)
+    nLbl.BackgroundTransparency = 1
+    nLbl.Font = Enum.Font.GothamBold
+    nLbl.TextSize = 14
+    nLbl.TextColor3 = C.text
+    nLbl.TextXAlignment = Enum.TextXAlignment.Left
+    nLbl.TextTruncate = Enum.TextTruncate.AtEnd
+    nLbl.Text = string.sub(LP.DisplayName, 1, 18)
+    nLbl.Parent = info
+
+    local aLbl = Instance.new("TextLabel")
+    aLbl.Position = UDim2.new(0, 0, 0, 26)
+    aLbl.Size = UDim2.new(1, 0, 0, 14)
+    aLbl.BackgroundTransparency = 1
+    aLbl.Font = Enum.Font.Gotham
+    aLbl.TextSize = 11
+    aLbl.TextColor3 = C.sub
+    aLbl.TextXAlignment = Enum.TextXAlignment.Left
+    aLbl.Text = "Anti-AFK"
+    aLbl.Parent = info
+
+    local bLbl = Instance.new("TextLabel")
+    bLbl.Position = UDim2.new(0, 0, 0, 41)
+    bLbl.Size = UDim2.new(1, 0, 0, 12)
+    bLbl.BackgroundTransparency = 1
+    bLbl.Font = Enum.Font.Gotham
+    bLbl.TextSize = 10
+    bLbl.TextColor3 = C.muted
+    bLbl.TextXAlignment = Enum.TextXAlignment.Left
+    bLbl.RichText = true
+    bLbl.Text = "<i>by magz1m</i>"
+    bLbl.Parent = info
+
+    local right = Instance.new("Frame")
+    right.AnchorPoint = Vector2.new(1, 0.5)
+    right.Position = UDim2.new(1, -38, 0.5, 0)
+    right.Size = UDim2.new(0, 70, 0, 36)
+    right.BackgroundTransparency = 1
+    right.ZIndex = 5
+    right.Parent = UI.bg
+
+    UI.timeLbl = Instance.new("TextLabel")
+    UI.timeLbl.Position = UDim2.new(0, 0, 0, 0)
+    UI.timeLbl.Size = UDim2.new(1, 0, 0, 16)
+    UI.timeLbl.BackgroundTransparency = 1
+    UI.timeLbl.Font = Enum.Font.Code
+    UI.timeLbl.TextSize = 13
+    UI.timeLbl.TextColor3 = C.ac2
+    UI.timeLbl.TextXAlignment = Enum.TextXAlignment.Right
+    UI.timeLbl.Text = "00:00:00"
+    UI.timeLbl.Parent = right
+
+    local upLbl = Instance.new("TextLabel")
+    upLbl.Position = UDim2.new(0, 0, 0, 18)
+    upLbl.Size = UDim2.new(1, 0, 0, 12)
+    upLbl.BackgroundTransparency = 1
+    upLbl.Font = Enum.Font.Gotham
+    upLbl.TextSize = 9
+    upLbl.TextColor3 = C.muted
+    upLbl.TextXAlignment = Enum.TextXAlignment.Right
+    upLbl.Text = LCL.uptime
+    upLbl.Parent = right
+
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.AnchorPoint = Vector2.new(1, 0.5)
+    closeBtn.Position = UDim2.new(1, -12, 0.5, 0)
+    closeBtn.Size = UDim2.new(0, 24, 0, 24)
+    closeBtn.BackgroundColor3 = C.err
+    closeBtn.BackgroundTransparency = 1
+    closeBtn.Text = "×"
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextSize = 18
+    closeBtn.TextColor3 = C.muted
+    closeBtn.AutoButtonColor = false
+    closeBtn.ZIndex = 7
+    closeBtn.Parent = UI.bg
+    local uic9 = Instance.new("UICorner") uic9.CornerRadius = UDim.new(0, 6) uic9.Parent = closeBtn
+    UI.closeBtn = closeBtn
+
+    local stats = Instance.new("Frame")
+    stats.Name = "Stats"
+    stats.Position = UDim2.new(0, 40, 1, 12)
+    stats.Size = UDim2.new(1, -40, 0, 16)
+    stats.BackgroundTransparency = 1
+    stats.ZIndex = 5
+    stats.Parent = UI.bg
+    
+    UI.statsAct = Instance.new("TextLabel")
+    UI.statsAct.Size = UDim2.new(0.33, 0, 1, 0)
+    UI.statsAct.BackgroundTransparency = 1
+    UI.statsAct.Font = Enum.Font.Gotham
+    UI.statsAct.TextSize = 10
+    UI.statsAct.TextColor3 = C.sub
+    UI.statsAct.TextXAlignment = Enum.TextXAlignment.Left
+    UI.statsAct.Text = LCL.act..": 0"
+    UI.statsAct.Parent = stats
+
+    UI.statsErr = Instance.new("TextLabel")
+    UI.statsErr.Size = UDim2.new(0.33, 0, 1, 0)
+    UI.statsErr.Position = UDim2.new(0.33, 0, 0, 0)
+    UI.statsErr.BackgroundTransparency = 1
+    UI.statsErr.Font = Enum.Font.Gotham
+    UI.statsErr.TextSize = 10
+    UI.statsErr.TextColor3 = C.sub
+    UI.statsErr.TextXAlignment = Enum.TextXAlignment.Center
+    UI.statsErr.Text = LCL.err..": 0"
+    UI.statsErr.Parent = stats
+
+    UI.statsMeth = Instance.new("TextButton")
+    UI.statsMeth.Size = UDim2.new(0.34, 0, 1, 0)
+    UI.statsMeth.Position = UDim2.new(0.66, 0, 0, 0)
+    UI.statsMeth.BackgroundTransparency = 1
+    UI.statsMeth.Font = Enum.Font.Gotham
+    UI.statsMeth.TextSize = 10
+    UI.statsMeth.TextColor3 = C.ac2
+    UI.statsMeth.TextXAlignment = Enum.TextXAlignment.Right
+    UI.statsMeth.Text = LCL.mCam
+    UI.statsMeth.Parent = stats
+    UI.statsFrame = stats
+
+    task.spawn(function()
+        task.wait(0.05)
+        TweenService:Create(sc, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+    end)
+
+    closeBtn.MouseButton1Click:Connect(function()
+        State.running = false
+        State.alive = false
+        TweenService:Create(UI.root, TweenInfo.new(0.2), { BackgroundTransparency = 1 }):Play()
+        TweenService:Create(sc, TweenInfo.new(0.2), { Scale = 0.8 }):Play()
+        task.wait(0.22)
+        if UI.gui then UI.gui:Destroy() end
+    end)
+    closeBtn.MouseEnter:Connect(function() TweenService:Create(closeBtn, TweenInfo.new(0.2), { BackgroundTransparency = 0.8, TextColor3 = C.err, Rotation = 90 }):Play() end)
+    closeBtn.MouseLeave:Connect(function() TweenService:Create(closeBtn, TweenInfo.new(0.2), { BackgroundTransparency = 1, TextColor3 = C.muted, Rotation = 0 }):Play() end)
+    
+    UI.statsMeth.MouseButton1Click:Connect(function()
+        State.methodIdx = (State.methodIdx % #METHODS) + 1
+        UI.statsMeth.Text = METHOD_LABEL[METHODS[State.methodIdx]]
+    end)
+
+    UI.root.MouseEnter:Connect(function() State.isHovering = true end)
+    UI.root.MouseLeave:Connect(function() State.isHovering = false end)
+    
+    if getgenv and getgenv().AAFX_STATE and getgenv().AAFX_STATE.pos then
+        local stPos = getgenv().AAFX_STATE.pos
+        UI.root.Position = UDim2.new(0, stPos.X, 0, stPos.Y)
+    end
+end
+
+local function startEngine()
+    local dragStartPos, currentPos
+    local targetPos = nil
+    local lastClickTime = 0
+
+    UI.root.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            State.lastUserInput = os.clock()
+            local timeNow = os.clock()
+            
+            if timeNow - lastClickTime < 0.3 then
+                State.isCollapsed = not State.isCollapsed
+                if State.isCollapsed then
+                    TweenService:Create(UI.root, TweenInfo.new(0.3, Enum.EasingStyle.Back), { Size = UDim2.fromOffset(48, 48) }):Play()
+                else
+                    TweenService:Create(UI.root, TweenInfo.new(0.3, Enum.EasingStyle.Back), { Size = UDim2.fromOffset(Q.sizeW, Q.sizeH) }):Play()
+                end
+                return
+            end
+            lastClickTime = timeNow
+
+            State.isDragging = true
+            dragStartPos = input.Position
+            currentPos = Vector2.new(UI.root.AbsolutePosition.X, UI.root.AbsolutePosition.Y)
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if not State.isDragging then return end
+        State.lastUserInput = os.clock()
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            local delta = input.Position - dragStartPos
+            local vp = workspace.CurrentCamera.ViewportSize
+            local s = UI.root.AbsoluteSize
+            
+            local nx = math.clamp(currentPos.X + delta.X, 0, vp.X - s.X)
+            local ny = math.clamp(currentPos.Y + delta.Y, 0, vp.Y - s.Y)
+            targetPos = Vector2.new(nx, ny)
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            if State.isDragging then
+                State.isDragging = false
+                targetPos = nil
+                if getgenv then
+                    getgenv().AAFX_STATE = getgenv().AAFX_STATE or {}
+                    getgenv().AAFX_STATE.pos = { X = UI.root.Position.X.Offset, Y = UI.root.Position.Y.Offset }
+                end
+            end
+        end
+    end)
+
+    task.spawn(function()
+        while State.alive do
+            if State.running and os.clock() >= State.nextAction then runCycle() end
+            task.wait(1)
+        end
+    end)
+
+    RunService.Heartbeat:Connect(function(dt)
+        if not UI.root or not UI.root.Parent then return end
+        
+        if State.isDragging and targetPos then
+            local cur = UI.root.Position
+            local cx = cur.X.Offset + (targetPos.X - cur.X.Offset) * math.clamp(dt * 20, 0, 1)
+            local cy = cur.Y.Offset + (targetPos.Y - cur.Y.Offset) * math.clamp(dt * 20, 0, 1)
+            UI.root.Position = UDim2.new(0, cx, 0, cy)
+        end
+
+        local t = os.clock()
+        local pulse = (math.sin(t * 2) + 1) / 2
+        
+        if UI.dotScale then
+            UI.dotScale.Scale = 1 + (pulse * 0.2)
+            UI.glow.BackgroundTransparency = 0.8 - (pulse * 0.4)
+            UI.dot.BackgroundColor3 = State.status == "error" and C.err or State.status == "paused" and C.warn or C.ok
+        end
+
+        if UI.shimmer then
+            local shimX = (t % 4) / 4
+            UI.shimmer.Position = UDim2.new(shimX * 2 - 0.5, 0, 0, 0)
+        end
+
+        if UI.stroke and UI.stroke:FindFirstChildOfClass("UIGradient") then
+            UI.stroke.UIGradient.Rotation = (t * 30) % 360
+        end
+
+        if UI.timeLbl then
+            local tm = math.floor(t - State.startTime)
+            UI.timeLbl.Text = string.format("%02d:%02d:%02d", math.floor(tm/3600), math.floor((tm%3600)/60), math.floor(tm%60))
+        end
+
+        if UI.bg and not State.isCollapsed then
+            local targetH = State.isHovering and Q.sizeHExpanded or Q.sizeH
+            if math.abs(UI.root.Size.Y.Offset - targetH) > 1 then
+                local currentH = UI.root.Size.Y.Offset
+                UI.root.Size = UDim2.new(0, Q.sizeW, 0, currentH + (targetH - currentH) * math.clamp(dt * 15, 0, 1))
+            end
+            if UI.statsFrame then
+                UI.statsFrame.Visible = State.isHovering
+                if State.isHovering then
+                    UI.statsAct.Text = LCL.act..": "..State.actions
+                    UI.statsErr.Text = LCL.err..": "..State.errors
+                end
+            end
+        end
+    end)
+end
+
+buildUI()
+if UI.root then
+    startEngine()
+end
